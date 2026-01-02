@@ -19,6 +19,6 @@ Availability & Changes
 The Service is provided “as is” without warranties. We may change or discontinue features at any time.
 
 Contact
-For support: DEINE EMAIL
+For support: tiktokmaschine9@gmail.com
 
 Last updated: 2026-01-02
