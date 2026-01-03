@@ -117,6 +117,68 @@ app.get("/tiktok/access-token", async (req, res) => {
   res.json(data);
 });
 
+app.post("/tiktok/publish", async (req, res) => {
+  try {
+    const video_url = (req.body?.video_url || "").toString().trim();
+    const caption = (req.body?.caption || "").toString().trim();
+
+    if (!video_url) {
+      return res.status(400).json({ error: "video_url required" });
+    }
+
+    if (!TIKTOK_REFRESH_TOKEN) {
+      return res.status(400).json({ error: "Missing TIKTOK_REFRESH_TOKEN (connect TikTok first)" });
+    }
+    if (!TIKTOK_CLIENT_KEY || !TIKTOK_CLIENT_SECRET) {
+      return res.status(400).json({ error: "Missing TikTok client env vars" });
+    }
+
+    const tokenRes = await fetch("https://open.tiktokapis.com/v2/oauth/token/", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_key: TIKTOK_CLIENT_KEY,
+        client_secret: TIKTOK_CLIENT_SECRET,
+        grant_type: "refresh_token",
+        refresh_token: TIKTOK_REFRESH_TOKEN,
+      }).toString(),
+    });
+
+    const tokenJson = await tokenRes.json();
+    if (!tokenRes.ok) {
+      return res.status(tokenRes.status).json(tokenJson);
+    }
+
+    const access_token = tokenJson?.access_token;
+    if (!access_token) {
+      return res.status(500).json({ error: "No access_token returned", detail: tokenJson });
+    }
+
+    const initRes = await fetch("https://open.tiktokapis.com/v2/post/publish/content/init/", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${access_token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        post_info: {
+          title: caption,
+        },
+        source_info: {
+          source: "PULL_FROM_URL",
+          video_url,
+        },
+      }),
+    });
+
+    const initJson = await initRes.json();
+    return res.status(initRes.status).json(initJson);
+  } catch (e) {
+    return res.status(500).json({ error: "server error", detail: e.message });
+  }
+});
+
+
 app.post("/render", async (req, res) => {
   try {
     const top = (req.body?.top_text || "").toString().trim();
