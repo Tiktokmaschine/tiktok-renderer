@@ -139,7 +139,6 @@ async function handleTikTokCallback(req, res) {
 }
 
 app.get("/auth/tiktok/callback", handleTikTokCallback);
-app.get("/auth/tiktok/callback/", handleTikTokCallback);
 
 app.get("/tiktok/access-token", async (req, res) => {
   try {
