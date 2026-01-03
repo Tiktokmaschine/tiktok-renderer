@@ -119,6 +119,43 @@ app.get("/auth/tiktok/callback", async (req, res) => {
   }
 });
 
+app.get("/auth/tiktok/callback/", async (req, res) => {
+  try {
+    const code = req.query.code;
+    if (!code) return res.status(400).send("Missing code");
+    if (!TIKTOK_CLIENT_KEY || !TIKTOK_CLIENT_SECRET || !TIKTOK_REDIRECT_URI) {
+      return res.status(400).send("Missing TikTok credentials env vars");
+    }
+
+    const r = await fetch("https://open.tiktokapis.com/v2/oauth/token/", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_key: TIKTOK_CLIENT_KEY,
+        client_secret: TIKTOK_CLIENT_SECRET,
+        code: String(code),
+        grant_type: "authorization_code",
+        redirect_uri: TIKTOK_REDIRECT_URI,
+      }).toString(),
+    });
+
+    const data = await r.json();
+
+    res.type("text/plain").send(
+      [
+        "TikTok connected.",
+        "",
+        "Copy this refresh token and save it in Railway as ENV var TIKTOK_REFRESH_TOKEN:",
+        "",
+        data?.refresh_token || JSON.stringify(data, null, 2),
+      ].join("\n")
+    );
+  } catch (e) {
+    res.status(500).type("text/plain").send(String(e?.message || e));
+  }
+});
+
+
 app.get("/tiktok/access-token", async (req, res) => {
   try {
     if (!TIKTOK_REFRESH_TOKEN) {
