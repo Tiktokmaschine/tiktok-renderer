@@ -13,19 +13,10 @@ const WORKDIR = "/tmp";
 const PUBLIC_DIR = path.join(WORKDIR, "public");
 fs.mkdirSync(PUBLIC_DIR, { recursive: true });
 
-const {
-  TIKTOK_CLIENT_KEY,
-  TIKTOK_CLIENT_SECRET,
-  TIKTOK_REDIRECT_URI,
-  TIKTOK_REFRESH_TOKEN,
-  PUBLIC_BASE_URL,
-  VIDEO_TTL_SECONDS,
-} = process.env;
-
-const ttlSeconds = Number(VIDEO_TTL_SECONDS || 7200);
+const ttlSeconds = Number(process.env.VIDEO_TTL_SECONDS || 7200);
 
 function baseUrl(req) {
-  const envBase = (PUBLIC_BASE_URL || "").trim();
+  const envBase = (process.env.PUBLIC_BASE_URL || "").trim();
   if (envBase) return envBase.replace(/\/+$/, "");
   const proto = (req.headers["x-forwarded-proto"] || "http").toString().split(",")[0].trim();
   const host = req.headers["x-forwarded-host"] || req.headers.host;
@@ -41,14 +32,24 @@ function scheduleDelete(filePath) {
 
 app.get("/", (req, res) => res.json({ ok: true, build: "auth-debug-1" }));
 
-app.use(express.static(process.cwd()));
-
-
 app.get("/debug/env", (req, res) => {
   const v = (k) => (process.env[k] ?? "").toString();
   const present = (k) => v(k).length;
 
-  app.get("/debug/auth", (req, res) => {
+  res.json({
+    env_present_lengths: {
+      PUBLIC_BASE_URL: present("PUBLIC_BASE_URL"),
+      TIKTOK_CLIENT_KEY: present("TIKTOK_CLIENT_KEY"),
+      TIKTOK_CLIENT_SECRET: present("TIKTOK_CLIENT_SECRET"),
+      TIKTOK_REDIRECT_URI: present("TIKTOK_REDIRECT_URI"),
+      TIKTOK_REFRESH_TOKEN: present("TIKTOK_REFRESH_TOKEN"),
+      VIDEO_TTL_SECONDS: present("VIDEO_TTL_SECONDS"),
+    },
+    node_version: process.version,
+  });
+});
+
+app.get("/debug/auth", (req, res) => {
   const scope = ["user.info.basic", "video.upload", "video.publish"].join(",");
   const redirect_uri = (process.env.TIKTOK_REDIRECT_URI || "").toString();
   const client_key = (process.env.TIKTOK_CLIENT_KEY || "").toString();
@@ -72,23 +73,11 @@ app.get("/debug/env", (req, res) => {
   });
 });
 
-
-  res.json({
-    env_present_lengths: {
-      PUBLIC_BASE_URL: present("PUBLIC_BASE_URL"),
-      TIKTOK_CLIENT_KEY: present("TIKTOK_CLIENT_KEY"),
-      TIKTOK_CLIENT_SECRET: present("TIKTOK_CLIENT_SECRET"),
-      TIKTOK_REDIRECT_URI: present("TIKTOK_REDIRECT_URI"),
-      TIKTOK_REFRESH_TOKEN: present("TIKTOK_REFRESH_TOKEN"),
-      VIDEO_TTL_SECONDS: present("VIDEO_TTL_SECONDS"),
-    },
-    node_version: process.version,
-  });
-});
-
-
 app.get("/auth/tiktok/start", (req, res) => {
-  if (!TIKTOK_CLIENT_KEY || !TIKTOK_REDIRECT_URI) {
+  const clientKey = (process.env.TIKTOK_CLIENT_KEY || "").toString().trim();
+  const redirectUri = (process.env.TIKTOK_REDIRECT_URI || "").toString().trim();
+
+  if (!clientKey || !redirectUri) {
     return res.status(400).send("Missing TIKTOK_CLIENT_KEY or TIKTOK_REDIRECT_URI");
   }
 
@@ -98,21 +87,26 @@ app.get("/auth/tiktok/start", (req, res) => {
   const url =
     "https://www.tiktok.com/v2/auth/authorize/?" +
     new URLSearchParams({
-      client_key: TIKTOK_CLIENT_KEY,
+      client_key: clientKey,
       scope,
       response_type: "code",
-      redirect_uri: TIKTOK_REDIRECT_URI,
+      redirect_uri: redirectUri,
       state,
     }).toString();
 
   res.redirect(url);
 });
 
-app.get("/auth/tiktok/callback", async (req, res) => {
+async function handleTikTokCallback(req, res) {
   try {
     const code = req.query.code;
     if (!code) return res.status(400).send("Missing code");
-    if (!TIKTOK_CLIENT_KEY || !TIKTOK_CLIENT_SECRET || !TIKTOK_REDIRECT_URI) {
+
+    const clientKey = (process.env.TIKTOK_CLIENT_KEY || "").toString().trim();
+    const clientSecret = (process.env.TIKTOK_CLIENT_SECRET || "").toString().trim();
+    const redirectUri = (process.env.TIKTOK_REDIRECT_URI || "").toString().trim();
+
+    if (!clientKey || !clientSecret || !redirectUri) {
       return res.status(400).send("Missing TikTok credentials env vars");
     }
 
@@ -120,11 +114,11 @@ app.get("/auth/tiktok/callback", async (req, res) => {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
-        client_key: TIKTOK_CLIENT_KEY,
-        client_secret: TIKTOK_CLIENT_SECRET,
+        client_key: clientKey,
+        client_secret: clientSecret,
         code: String(code),
         grant_type: "authorization_code",
-        redirect_uri: TIKTOK_REDIRECT_URI,
+        redirect_uri: redirectUri,
       }).toString(),
     });
 
@@ -142,62 +136,29 @@ app.get("/auth/tiktok/callback", async (req, res) => {
   } catch (e) {
     res.status(500).type("text/plain").send(String(e?.message || e));
   }
-});
+}
 
-app.get("/auth/tiktok/callback/", async (req, res) => {
-  try {
-    const code = req.query.code;
-    if (!code) return res.status(400).send("Missing code");
-    if (!TIKTOK_CLIENT_KEY || !TIKTOK_CLIENT_SECRET || !TIKTOK_REDIRECT_URI) {
-      return res.status(400).send("Missing TikTok credentials env vars");
-    }
-
-    const r = await fetch("https://open.tiktokapis.com/v2/oauth/token/", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        client_key: TIKTOK_CLIENT_KEY,
-        client_secret: TIKTOK_CLIENT_SECRET,
-        code: String(code),
-        grant_type: "authorization_code",
-        redirect_uri: TIKTOK_REDIRECT_URI,
-      }).toString(),
-    });
-
-    const data = await r.json();
-
-    res.type("text/plain").send(
-      [
-        "TikTok connected.",
-        "",
-        "Copy this refresh token and save it in Railway as ENV var TIKTOK_REFRESH_TOKEN:",
-        "",
-        data?.refresh_token || JSON.stringify(data, null, 2),
-      ].join("\n")
-    );
-  } catch (e) {
-    res.status(500).type("text/plain").send(String(e?.message || e));
-  }
-});
-
+app.get("/auth/tiktok/callback", handleTikTokCallback);
+app.get("/auth/tiktok/callback/", handleTikTokCallback);
 
 app.get("/tiktok/access-token", async (req, res) => {
   try {
-    if (!TIKTOK_REFRESH_TOKEN) {
-      return res.status(400).json({ error: "Missing TIKTOK_REFRESH_TOKEN" });
-    }
-    if (!TIKTOK_CLIENT_KEY || !TIKTOK_CLIENT_SECRET) {
+    const refreshToken = (process.env.TIKTOK_REFRESH_TOKEN || "").toString().trim();
+    const clientKey = (process.env.TIKTOK_CLIENT_KEY || "").toString().trim();
+    const clientSecret = (process.env.TIKTOK_CLIENT_SECRET || "").toString().trim();
+
+    if (!refreshToken) return res.status(400).json({ error: "Missing TIKTOK_REFRESH_TOKEN" });
+    if (!clientKey || !clientSecret)
       return res.status(400).json({ error: "Missing TikTok client env vars" });
-    }
 
     const r = await fetch("https://open.tiktokapis.com/v2/oauth/token/", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
-        client_key: TIKTOK_CLIENT_KEY,
-        client_secret: TIKTOK_CLIENT_SECRET,
+        client_key: clientKey,
+        client_secret: clientSecret,
         grant_type: "refresh_token",
-        refresh_token: TIKTOK_REFRESH_TOKEN,
+        refresh_token: refreshToken,
       }).toString(),
     });
 
@@ -213,14 +174,16 @@ app.post("/tiktok/publish", async (req, res) => {
     const video_url = (req.body?.video_url || "").toString().trim();
     const caption = (req.body?.caption || "").toString().trim();
 
-    if (!video_url) {
-      return res.status(400).json({ error: "video_url required" });
-    }
+    if (!video_url) return res.status(400).json({ error: "video_url required" });
 
-    if (!TIKTOK_REFRESH_TOKEN) {
+    const refreshToken = (process.env.TIKTOK_REFRESH_TOKEN || "").toString().trim();
+    const clientKey = (process.env.TIKTOK_CLIENT_KEY || "").toString().trim();
+    const clientSecret = (process.env.TIKTOK_CLIENT_SECRET || "").toString().trim();
+
+    if (!refreshToken) {
       return res.status(400).json({ error: "Missing TIKTOK_REFRESH_TOKEN (connect TikTok first)" });
     }
-    if (!TIKTOK_CLIENT_KEY || !TIKTOK_CLIENT_SECRET) {
+    if (!clientKey || !clientSecret) {
       return res.status(400).json({ error: "Missing TikTok client env vars" });
     }
 
@@ -228,17 +191,15 @@ app.post("/tiktok/publish", async (req, res) => {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
-        client_key: TIKTOK_CLIENT_KEY,
-        client_secret: TIKTOK_CLIENT_SECRET,
+        client_key: clientKey,
+        client_secret: clientSecret,
         grant_type: "refresh_token",
-        refresh_token: TIKTOK_REFRESH_TOKEN,
+        refresh_token: refreshToken,
       }).toString(),
     });
 
     const tokenJson = await tokenRes.json();
-    if (!tokenRes.ok) {
-      return res.status(tokenRes.status).json(tokenJson);
-    }
+    if (!tokenRes.ok) return res.status(tokenRes.status).json(tokenJson);
 
     const access_token = tokenJson?.access_token;
     if (!access_token) {
@@ -252,13 +213,8 @@ app.post("/tiktok/publish", async (req, res) => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        post_info: {
-          title: caption,
-        },
-        source_info: {
-          source: "PULL_FROM_URL",
-          video_url,
-        },
+        post_info: { title: caption },
+        source_info: { source: "PULL_FROM_URL", video_url },
       }),
     });
 
@@ -291,14 +247,11 @@ app.post("/render", async (req, res) => {
     const esc = (s) =>
       s.replace(/\\/g, "\\\\").replace(/:/g, "\\:").replace(/'/g, "\\'").replace(/\n/g, " ");
 
-    const topEsc = esc(top);
-    const bottomEsc = esc(bottom);
-
     const vf =
       `scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,` +
-      `drawtext=fontfile=${fontPath}:text='${topEsc}':x=(w-text_w)/2:y=180:` +
+      `drawtext=fontfile=${fontPath}:text='${esc(top)}':x=(w-text_w)/2:y=180:` +
       `fontsize=72:fontcolor=white:borderw=6:bordercolor=black,` +
-      `drawtext=fontfile=${fontPath}:text='${bottomEsc}':x=(w-text_w)/2:y=h-260:` +
+      `drawtext=fontfile=${fontPath}:text='${esc(bottom)}':x=(w-text_w)/2:y=h-260:` +
       `fontsize=72:fontcolor=white:borderw=6:bordercolor=black`;
 
     const args = [
@@ -323,9 +276,7 @@ app.post("/render", async (req, res) => {
     ];
 
     execFile("ffmpeg", args, (error) => {
-      if (error) {
-        return res.status(500).json({ error: "ffmpeg failed", detail: error.message });
-      }
+      if (error) return res.status(500).json({ error: "ffmpeg failed", detail: error.message });
 
       scheduleDelete(outPath);
 
@@ -339,10 +290,11 @@ app.post("/render", async (req, res) => {
 
 app.use("/public", express.static(PUBLIC_DIR));
 
-
 app.get("/auth/tiktok/tiktokcDRwvGAVBiSJQbISEpT9qu0n1vkjIUOB.txt", (req, res) => {
-  res.type("text/plain").send("tiktok-developers-site-verification=cDRwvGAVBiSJQbISEpT9qu0n1vkjIUOB");
+  res
+    .type("text/plain")
+    .send("tiktok-developers-site-verification=cDRwvGAVBiSJQbISEpT9qu0n1vkjIUOB");
 });
 
-
 app.listen(PORT, () => console.log(`Renderer running on ${PORT}`));
+
