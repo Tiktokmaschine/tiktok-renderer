@@ -274,4 +274,13 @@ app.post("/render", async (req, res) => {
 
 app.use("/public", express.static(PUBLIC_DIR));
 
+app.get("/:file", (req, res, next) => {
+  const fn = (process.env.TIKTOK_VERIFY_FILENAME || "").trim();
+  const content = (process.env.TIKTOK_VERIFY_CONTENT || "").trim();
+  if (!fn || !content) return next();
+  if (req.params.file !== fn) return next();
+  res.type("text/plain").send(content);
+});
+
+
 app.listen(PORT, () => console.log(`Renderer running on ${PORT}`));
