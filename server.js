@@ -278,6 +278,9 @@ app.post("/render", async (req, res) => {
 app.use("/public", express.static(PUBLIC_DIR));
 
 
+app.get("/auth/tiktok/tiktokcDRwvGAVBiSJQbISEpT9qu0n1vkjIUOB.txt", (req, res) => {
+  res.type("text/plain").send("tiktok-developers-site-verification=cDRwvGAVBiSJQbISEpT9qu0n1vkjIUOB");
+});
 
 
 app.listen(PORT, () => console.log(`Renderer running on ${PORT}`));
