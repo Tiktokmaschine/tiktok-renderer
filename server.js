@@ -39,7 +39,7 @@ function scheduleDelete(filePath) {
   }, ms);
 }
 
-app.get("/", (req, res) => res.json({ ok: true }));
+app.get("/", (req, res) => res.json({ ok: true, build: "auth-debug-1" }));
 
 app.use(express.static(process.cwd()));
 
