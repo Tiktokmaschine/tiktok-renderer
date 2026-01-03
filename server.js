@@ -48,6 +48,31 @@ app.get("/debug/env", (req, res) => {
   const v = (k) => (process.env[k] ?? "").toString();
   const present = (k) => v(k).length;
 
+  app.get("/debug/auth", (req, res) => {
+  const scope = ["user.info.basic", "video.upload", "video.publish"].join(",");
+  const redirect_uri = (process.env.TIKTOK_REDIRECT_URI || "").toString();
+  const client_key = (process.env.TIKTOK_CLIENT_KEY || "").toString();
+
+  const authUrl =
+    "https://www.tiktok.com/v2/auth/authorize/?" +
+    new URLSearchParams({
+      client_key,
+      scope,
+      response_type: "code",
+      redirect_uri,
+      state: "debug",
+    }).toString();
+
+  res.json({
+    client_key_len: client_key.length,
+    client_key_preview: client_key ? `${client_key.slice(0, 4)}...${client_key.slice(-4)}` : null,
+    redirect_uri,
+    scope,
+    authUrl,
+  });
+});
+
+
   res.json({
     env_present_lengths: {
       PUBLIC_BASE_URL: present("PUBLIC_BASE_URL"),
