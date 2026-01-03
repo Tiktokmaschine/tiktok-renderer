@@ -41,6 +41,9 @@ function scheduleDelete(filePath) {
 
 app.get("/", (req, res) => res.json({ ok: true }));
 
+app.use(express.static(process.cwd()));
+
+
 app.get("/debug/env", (req, res) => {
   const v = (k) => (process.env[k] ?? "").toString();
   const present = (k) => v(k).length;
