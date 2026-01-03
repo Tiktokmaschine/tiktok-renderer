@@ -41,6 +41,18 @@ function scheduleDelete(filePath) {
 
 app.get("/", (req, res) => res.json({ ok: true }));
 
+app.get("/debug/env", (req, res) => {
+  res.json({
+    has_client_key: Boolean(TIKTOK_CLIENT_KEY),
+    has_client_secret: Boolean(TIKTOK_CLIENT_SECRET),
+    has_redirect_uri: Boolean(TIKTOK_REDIRECT_URI),
+    has_refresh_token: Boolean(TIKTOK_REFRESH_TOKEN),
+    public_base_url: (PUBLIC_BASE_URL || "").trim() || null,
+    ttl_seconds: ttlSeconds,
+    node_version: process.version,
+  });
+});
+
 app.get("/auth/tiktok/start", (req, res) => {
   if (!TIKTOK_CLIENT_KEY || !TIKTOK_REDIRECT_URI) {
     return res.status(400).send("Missing TIKTOK_CLIENT_KEY or TIKTOK_REDIRECT_URI");
@@ -63,58 +75,66 @@ app.get("/auth/tiktok/start", (req, res) => {
 });
 
 app.get("/auth/tiktok/callback", async (req, res) => {
-  const code = req.query.code;
-  if (!code) return res.status(400).send("Missing code");
-  if (!TIKTOK_CLIENT_KEY || !TIKTOK_CLIENT_SECRET || !TIKTOK_REDIRECT_URI) {
-    return res.status(400).send("Missing TikTok credentials env vars");
+  try {
+    const code = req.query.code;
+    if (!code) return res.status(400).send("Missing code");
+    if (!TIKTOK_CLIENT_KEY || !TIKTOK_CLIENT_SECRET || !TIKTOK_REDIRECT_URI) {
+      return res.status(400).send("Missing TikTok credentials env vars");
+    }
+
+    const r = await fetch("https://open.tiktokapis.com/v2/oauth/token/", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_key: TIKTOK_CLIENT_KEY,
+        client_secret: TIKTOK_CLIENT_SECRET,
+        code: String(code),
+        grant_type: "authorization_code",
+        redirect_uri: TIKTOK_REDIRECT_URI,
+      }).toString(),
+    });
+
+    const data = await r.json();
+
+    res.type("text/plain").send(
+      [
+        "TikTok connected.",
+        "",
+        "Copy this refresh token and save it in Railway as ENV var TIKTOK_REFRESH_TOKEN:",
+        "",
+        data?.refresh_token || JSON.stringify(data, null, 2),
+      ].join("\n")
+    );
+  } catch (e) {
+    res.status(500).type("text/plain").send(String(e?.message || e));
   }
-
-  const r = await fetch("https://open.tiktokapis.com/v2/oauth/token/", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      client_key: TIKTOK_CLIENT_KEY,
-      client_secret: TIKTOK_CLIENT_SECRET,
-      code: String(code),
-      grant_type: "authorization_code",
-      redirect_uri: TIKTOK_REDIRECT_URI,
-    }).toString(),
-  });
-
-  const data = await r.json();
-
-  res.type("text/plain").send(
-    [
-      "TikTok connected.",
-      "",
-      "Copy this refresh token and save it in Railway as ENV var TIKTOK_REFRESH_TOKEN:",
-      "",
-      data?.refresh_token || JSON.stringify(data, null, 2),
-    ].join("\n")
-  );
 });
 
 app.get("/tiktok/access-token", async (req, res) => {
-  if (!TIKTOK_REFRESH_TOKEN) {
-    return res.status(400).json({ error: "Missing TIKTOK_REFRESH_TOKEN" });
-  }
-  if (!TIKTOK_CLIENT_KEY || !TIKTOK_CLIENT_SECRET) {
-    return res.status(400).json({ error: "Missing TikTok client env vars" });
-  }
+  try {
+    if (!TIKTOK_REFRESH_TOKEN) {
+      return res.status(400).json({ error: "Missing TIKTOK_REFRESH_TOKEN" });
+    }
+    if (!TIKTOK_CLIENT_KEY || !TIKTOK_CLIENT_SECRET) {
+      return res.status(400).json({ error: "Missing TikTok client env vars" });
+    }
 
-  const r = await fetch("https://open.tiktokapis.com/v2/oauth/token/", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      client_key: TIKTOK_CLIENT_KEY,
-      client_secret: TIKTOK_CLIENT_SECRET,
-      grant_type: "refresh_token",
-      refresh_token: TIKTOK_REFRESH_TOKEN,
-    }).toString(),
-  });
+    const r = await fetch("https://open.tiktokapis.com/v2/oauth/token/", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_key: TIKTOK_CLIENT_KEY,
+        client_secret: TIKTOK_CLIENT_SECRET,
+        grant_type: "refresh_token",
+        refresh_token: TIKTOK_REFRESH_TOKEN,
+      }).toString(),
+    });
 
-  const data = await r.json();
-  res.json(data);
+    const data = await r.json();
+    return res.status(r.status).json(data);
+  } catch (e) {
+    return res.status(500).json({ error: "server error", detail: e.message });
+  }
 });
 
 app.post("/tiktok/publish", async (req, res) => {
@@ -178,7 +198,6 @@ app.post("/tiktok/publish", async (req, res) => {
   }
 });
 
-
 app.post("/render", async (req, res) => {
   try {
     const top = (req.body?.top_text || "").toString().trim();
@@ -213,15 +232,23 @@ app.post("/render", async (req, res) => {
 
     const args = [
       "-y",
-      "-stream_loop", "-1",
-      "-i", bgPath,
-      "-t", "8",
-      "-vf", vf,
-      "-r", "30",
-      "-c:v", "libx264",
-      "-pix_fmt", "yuv420p",
-      "-movflags", "+faststart",
-      outPath
+      "-stream_loop",
+      "-1",
+      "-i",
+      bgPath,
+      "-t",
+      "8",
+      "-vf",
+      vf,
+      "-r",
+      "30",
+      "-c:v",
+      "libx264",
+      "-pix_fmt",
+      "yuv420p",
+      "-movflags",
+      "+faststart",
+      outPath,
     ];
 
     execFile("ffmpeg", args, (error) => {
