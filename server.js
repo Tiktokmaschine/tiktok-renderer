@@ -50,7 +50,7 @@ app.get("/debug/env", (req, res) => {
 });
 
 app.get("/debug/auth", (req, res) => {
-  const scope = ["user.info.basic", "video.upload", "video.publish"].join(",");
+  const scope = "user.info.basic";
   const redirect_uri = (process.env.TIKTOK_REDIRECT_URI || "").toString();
   const client_key = (process.env.TIKTOK_CLIENT_KEY || "").toString();
 
@@ -81,7 +81,7 @@ app.get("/auth/tiktok/start", (req, res) => {
     return res.status(400).send("Missing TIKTOK_CLIENT_KEY or TIKTOK_REDIRECT_URI");
   }
 
-  const scope = ["user.info.basic", "video.upload", "video.publish"].join(",");
+  const scope = "user.info.basic";
   const state = crypto.randomBytes(16).toString("hex");
 
   const url =
