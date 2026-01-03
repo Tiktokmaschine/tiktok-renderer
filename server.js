@@ -42,16 +42,22 @@ function scheduleDelete(filePath) {
 app.get("/", (req, res) => res.json({ ok: true }));
 
 app.get("/debug/env", (req, res) => {
+  const v = (k) => (process.env[k] ?? "").toString();
+  const present = (k) => v(k).length;
+
   res.json({
-    has_client_key: Boolean(TIKTOK_CLIENT_KEY),
-    has_client_secret: Boolean(TIKTOK_CLIENT_SECRET),
-    has_redirect_uri: Boolean(TIKTOK_REDIRECT_URI),
-    has_refresh_token: Boolean(TIKTOK_REFRESH_TOKEN),
-    public_base_url: (PUBLIC_BASE_URL || "").trim() || null,
-    ttl_seconds: ttlSeconds,
+    env_present_lengths: {
+      PUBLIC_BASE_URL: present("PUBLIC_BASE_URL"),
+      TIKTOK_CLIENT_KEY: present("TIKTOK_CLIENT_KEY"),
+      TIKTOK_CLIENT_SECRET: present("TIKTOK_CLIENT_SECRET"),
+      TIKTOK_REDIRECT_URI: present("TIKTOK_REDIRECT_URI"),
+      TIKTOK_REFRESH_TOKEN: present("TIKTOK_REFRESH_TOKEN"),
+      VIDEO_TTL_SECONDS: present("VIDEO_TTL_SECONDS"),
+    },
     node_version: process.version,
   });
 });
+
 
 app.get("/auth/tiktok/start", (req, res) => {
   if (!TIKTOK_CLIENT_KEY || !TIKTOK_REDIRECT_URI) {
